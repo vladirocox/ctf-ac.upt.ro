@@ -39,15 +39,15 @@
 
 - octojail
 
-- onions1
+- [onions1](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#onions1)
 
 - onions2
 
-- disco_dance
+- [disco_dance](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#disco_dance)
 
-- disco_rave
+- [disco_rave](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#disco_rave)
 
-- discord
+- [discord](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#discord)
 
 ### web
 
@@ -75,7 +75,7 @@
 
 - Prison
 
-- Ancient_house
+- [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
 
