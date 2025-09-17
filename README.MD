@@ -21,7 +21,7 @@
 
 - Unknown-traffic2
 
-- [Hidden in the cartige](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#hidden_in_the_cartige)
+- [Hidden in the cartridge](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#hidden_in_the_cartridge)
 
 - Baofeng
 
@@ -81,7 +81,7 @@
 
 ## --------------------------------------------------
 
-### hidden_in_the_cartige
+### hidden_in_the_cartridge
 - This challange was pretty easy. I started by running strings on the .nes file and exported it to a txt file.
 ```
 strings space_invaders.nes >> txt.txt
