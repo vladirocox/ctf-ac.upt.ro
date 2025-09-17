@@ -41,7 +41,7 @@
 
 - [onions1](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#onions1)
 
-- onions2
+- [onions2](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#onions2)
 
 - [disco_dance](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#disco_dance)
 
@@ -80,6 +80,22 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### onions2
+- At first, it may seem like it's just a picture, but in reality, it hides an onion link.
+- That's what I discovered when i ran zsteg.
+- t465kjcwuqbpabjeh3za73zkxxlzymattskj2gj3ftkvmm5unnyqrvyd.onion
+- Opening the link, I immediately recognise the saying from overclock's bio:)))
+- Everything seemed fine, nothing out of the ordinary on the ui, so I opened the source code, which looked relatively fine, the single outlier being the font which was suspicious.
+- I downloaded it and ran strings on it.
+- Nothing caught my eye, except the reaaallyyyy long final line, which I entered onto cyberchef.
+- After several times of using Magic, decrypting from base64, then from hex, from morse code and finally from binary, I see a google maps link.
+<img width="1920" height="1080" alt="Screenshot_17-Sep_16-43-29_15717" src="https://github.com/user-attachments/assets/39a0ece4-4714-4348-85c7-f623cf948c0a" />
+- Opening it, I look at the picture closely. I see something special.
+- Looking at the whole image gallery, I finally discover a QR code.
+<img width="1920" height="1080" alt="Screenshot_17-Sep_17-18-48_4287" src="https://github.com/user-attachments/assets/ed155ca9-d0a8-465d-84f1-e310fbea3e34" />
+- Scanning it reveales the flag.
+- ctf{199a4b2aee1bcab9e885624331f9bd5808a2167c49daa343ca81c44a03d7f4ef}
 
 ### random-gallery
 - Seeing the login page, I instantly tried some random logins, like admin admin.
