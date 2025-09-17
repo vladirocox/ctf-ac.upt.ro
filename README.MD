@@ -82,22 +82,148 @@
 ### Discord
 - The flag_channel does not actually contain the flag. Analyzing the food recipes will just make you hungry.
 - Opening the sticker panel, we are instantly greeted with the CTF@AC Logo, with the qr code visually hidden.
-- (qr photo)
+- ![Screenshot_1](https://github.com/user-attachments/assets/611465e0-dc52-44f8-9c13-3046e49a0a8b)
 - Vencord (custom discord client) let me instantly get the bigger picture, which I put a grayscale filter over, so that the picture would scan easier.
-- (scanned)
+- ![image](https://github.com/user-attachments/assets/d9f603ef-9f99-4c1d-bda4-697063bf4c27)
 - The link redirects you to example.com, but, inside the link, there is a hidden parameter stating the flag.
-- (flag and photo)
+- ![IMG_8939](https://github.com/user-attachments/assets/a2157a72-41c0-4c3f-991e-0a1ce4893b47)
+- ctf{7B9096dbeab272bd4d02ea9a5e0f66568ab274b2096f8be3933a48131f8e4db907}
 
 ### disco_dance
 - The discord series was my favourite type of challanges.
 - They were so well thought and engineered, and actually made me smile.
 - Regarding disco_dance, the server sends an encrypted text, which can only be decoded using the contents of the last 5 messages in the "spam" channel.
 - ChatGPT and I kinda underengineered it, as the script lacks the ability to automatically fetch the contents using the discord api. 
-- This would have helped me get a first blood easily.
+- This would have helped me get a first blood for the next challange easily.
 - Thankfully, my coleague, which I thank a lot, filled the chat with "a" s, which made it impressively easy for me and the script to decode the flag.
-- Here is the script I used to decrypt the flag:
-- (script script)
-- (flag)
+- CTF{f55ba4939edd5611a7ab797529b51dae47989b3c5a99f2ffc82e4b2c74d03e56}
+- Here is the script I used:
+
+```
+#!/usr/bin/env python3
+"""
+Conectează-te la host:port, citește JSON-ul returnat (o linie) cu cheia 'encrypted',
+construiește seed = "a" repetat de 5 ori, derivează SHA256(seed) -> AES key,
+decodează base64(iv + ciphertext) și decriptează AES-CBC + PKCS7 unpad -> afișează flag.
+"""
+
+import sys
+import socket
+import json
+import base64
+from Crypto.Cipher import AES
+from Crypto.Hash import SHA256
+from Crypto.Util.Padding import unpad
+
+def derive_key_from_seed(seed: bytes) -> bytes:
+    h = SHA256.new()
+    h.update(seed)
+    return h.digest()
+
+def decrypt_blob_b64(encrypted_b64: str, seed_bytes: bytes) -> bytes:
+    raw = base64.b64decode(encrypted_b64)
+    if len(raw) < 16:
+        raise ValueError("Blob prea scurt (nu exista IV + ciphertext).")
+    iv = raw[:16]
+    ct = raw[16:]
+    key = derive_key_from_seed(seed_bytes)
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    pt_padded = cipher.decrypt(ct)
+    try:
+        pt = unpad(pt_padded, AES.block_size)
+    except ValueError as e:
+        raise ValueError("Eroare la unpad (cheie/seed greșit sau ciphertext corupt).") from e
+    return pt
+
+def recv_line(sock: socket.socket, timeout: float = 5.0) -> str:
+    sock.settimeout(timeout)
+    buf = b""
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        buf += chunk
+        if b"\n" in buf:
+            break
+    return buf.decode(errors="replace").strip()
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python disco_dance.py <HOST> [PORT]")
+        sys.exit(2)
+    host = sys.argv[1]
+    port = int(sys.argv[2]) if len(sys.argv) >= 3 else 5000
+
+    # seed = concatenarea celor 5 mesaje "a"
+    seed_string = "a" * 5  # "aaaaa"
+    seed_bytes = seed_string.encode("utf-8")
+
+    try:
+        with socket.create_connection((host, port), timeout=8) as s:
+            # primim o linie (JSON) de la server
+            data_line = recv_line(s, timeout=6.0)
+    except Exception as e:
+        print(f"Conexiune esuata: {e}")
+        sys.exit(1)
+
+    if not data_line:
+        print("Nu am primit niciun raspuns de la server.")
+        sys.exit(1)
+
+    # încercăm să parsăm JSON; server trimite string reprezentare dict ('{'encrypted': '...'}')
+    encrypted_b64 = None
+    try:
+        parsed = json.loads(data_line)
+        if isinstance(parsed, dict) and "encrypted" in parsed:
+            encrypted_b64 = parsed["encrypted"]
+    except Exception:
+        alt = data_line.strip()
+        try:
+            alt_json = alt.replace("'", '"')
+            parsed = json.loads(alt_json)
+            if isinstance(parsed, dict) and "encrypted" in parsed:
+                encrypted_b64 = parsed["encrypted"]
+        except Exception:
+            try:
+                if "encrypted" in data_line:
+                    idx = data_line.find("encrypted")
+                    sub = data_line[idx:]
+                    for q in ("'", '"'):
+                        p1 = sub.find(q)
+                        if p1 != -1:
+                            p2 = sub.find(q, p1+1)
+                            if p2 != -1:
+                                encrypted_b64 = sub[p1+1:p2]
+                                break
+            except Exception:
+                encrypted_b64 = None
+
+    if not encrypted_b64:
+        print("Nu am reușit să extrag câmpul 'encrypted' din răspunsul serverului.")
+        print("Răspuns brut primit:")
+        print(data_line)
+        sys.exit(1)
+
+    print("Encrypted (base64):", encrypted_b64)
+    print("Folosesc seed (5x 'a'):", repr(seed_string))
+
+    try:
+        plaintext = decrypt_blob_b64(encrypted_b64, seed_bytes)
+    except Exception as e:
+        print("Eroare la decriptare:", e)
+        sys.exit(1)
+
+    print("\n== Decrypted plaintext (bytes) ==")
+    print(plaintext)
+    print("\n== Decrypted plaintext (utf-8 if decodable) ==")
+    try:
+        print(plaintext.decode("utf-8"))
+    except Exception:
+        print("<cannot decode as utf-8>")
+
+if __name__ == "__main__":
+    main()
+```
 
 ### disco_rave
 - Another congrats to the organisers and challange writers, as this one was my favourite.
@@ -105,7 +231,207 @@
 - The challange works relatively the same. This time, it fetches the last messages ("content" and "timestamp") from the both spam channels. 
 - This time, using an automatically message fetcher was necessary, as the whole chat was going crazy, and getting the exact timestamp manually would take too long. Even longer than actually making an automatic message fetcher.
 - Long story short, using a similar script, this time automatically fetching every piece of information needed, I instantly got the flag.
-- (script, flag)
+- CTF{a83a34f8791905a4edd6e03beefeddc1c7eeeeeacf9d96af6d1e3c34494df4cc}
+```
+#!/usr/bin/env python3
+
+import os
+import sys
+import json
+import argparse
+import time
+import base64
+import socket
+import requests
+from Crypto.Hash import SHA256
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
+
+# Channels (în aceeași ordine ca serverul)
+CHANNELS = [
+    "1416908413375479891",
+    "1417154025371209852",
+]
+
+DISCORD_API_BASE = "https://discord.com/api/v10"
+
+def fetch_messages_channel(token: str, channel_id: str, limit: int = 10, retry: int = 3, backoff: float = 1.0):
+    """
+    Returnează lista de mesaje (JSON list) pentru channel_id în ordinea returnată de API (newest->oldest).
+    """
+    url = f"{DISCORD_API_BASE}/channels/{channel_id}/messages"
+    headers = {"Authorization": f"{token}"}
+    params = {"limit": limit}
+    for attempt in range(1, retry + 1):
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            if not isinstance(data, list):
+                raise RuntimeError("Unexpected response shape: not a list")
+            return data
+        except requests.HTTPError as e:
+            status = getattr(e.response, "status_code", None)
+            if status == 429:
+                try:
+                    j = e.response.json()
+                    wait = j.get("retry_after", backoff)
+                    # retry_after might be seconds (float)
+                except Exception:
+                    wait = backoff
+                time.sleep(wait if isinstance(wait, (int, float)) else backoff)
+                continue
+            # for 401/403 -> stop and raise
+            raise
+        except Exception as e:
+            if attempt < retry:
+                time.sleep(backoff * attempt)
+                continue
+            raise
+
+def build_seed_from_channels(token: str, channels, limit: int = 10):
+    """
+    Construiește seed-ul EXACT ca serverul: pentru fiecare canal (în lista channels),
+    ia mesajele returnate de API (în ordinea API), pentru fiecare msg concatenează content + timestamp,
+    apoi concatenează toate acestea (mai întâi toate din channel1, apoi channel2).
+    Returnează seed în bytes (utf-8).
+    """
+    parts = []
+    for ch in channels:
+        msgs = fetch_messages_channel(token, ch, limit=limit)
+        # păstrăm ordinea exactă a listei returnate de API
+        for m in msgs:
+            content = m.get("content", "") or ""
+            timestamp = m.get("timestamp", "") or ""
+            parts.append(f"{content}{timestamp}")
+    concatenated = "".join(parts)
+    return concatenated.encode("utf-8"), parts  # returnăm și lista pentru debugging
+
+def derive_key_from_seed(seed_bytes: bytes):
+    h = SHA256.new()
+    h.update(seed_bytes)
+    return h.digest()
+
+def decrypt_blob_b64(encrypted_b64: str, seed_bytes: bytes):
+    raw = base64.b64decode(encrypted_b64)
+    if len(raw) < 16:
+        raise ValueError("Encrypted blob prea scurt (IV + ciphertext lipsește).")
+    iv = raw[:16]
+    ct = raw[16:]
+    key = derive_key_from_seed(seed_bytes)
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    pt_padded = cipher.decrypt(ct)
+    pt = unpad(pt_padded, AES.block_size)
+    return pt
+
+def recv_line(sock: socket.socket, timeout: float = 6.0) -> str:
+    sock.settimeout(timeout)
+    buf = b""
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        buf += chunk
+        if b"\n" in buf:
+            break
+    return buf.decode(errors="replace").strip()
+
+def extract_encrypted(line: str):
+    # încearcă JSON -> string cu apostroafe -> parsing rudimentar
+    try:
+        j = json.loads(line)
+        if isinstance(j, dict) and "encrypted" in j:
+            return j["encrypted"]
+    except Exception:
+        pass
+    try:
+        j = json.loads(line.replace("'", '"'))
+        if isinstance(j, dict) and "encrypted" in j:
+            return j["encrypted"]
+    except Exception:
+        pass
+    if "encrypted" in line:
+        sub = line[line.find("encrypted"):]
+        for q in ('"', "'"):
+            a = sub.find(q)
+            if a != -1:
+                b = sub.find(q, a+1)
+                if b != -1:
+                    return sub[a+1:b]
+    return None
+
+def main():
+    parser = argparse.ArgumentParser(description="Fetch messages from Discord (bot token), build seed and decrypt CTF service output.")
+    parser.add_argument("host", help="CTF host/IP")
+    parser.add_argument("port", nargs="?", type=int, default=5000, help="CTF port (default 5000)")
+    parser.add_argument("--token", help="Bot token (optional). Better set DISCORD_BOT_TOKEN env var).")
+    parser.add_argument("--limit", type=int, default=10, help="How many messages to fetch per channel (default 10)")
+    parser.add_argument("--show-seed", action="store_true", help="Print seed (for local debug only!). Do NOT share seed.")
+    args = parser.parse_args()
+
+    token = args.token or os.getenv("DISCORD_BOT_TOKEN")
+    if not token:
+        print("ERROR: furnizează token bot (env DISCORD_BOT_TOKEN sau --token).")
+        sys.exit(1)
+
+    try:
+        seed_bytes, parts = build_seed_from_channels(token, CHANNELS, limit=args.limit)
+    except Exception as e:
+        print("[!] Eroare la fetch mesaje de pe Discord:", e)
+        sys.exit(1)
+
+    print(f"[*] Seed construit ({len(seed_bytes)} bytes).")
+    if args.show_seed:
+        # Atenție: nu publica seedul! Folosește doar local pentru debugging.
+        print("DEBUG seed repr (don't share):")
+        try:
+            print(repr(seed_bytes.decode("utf-8", errors="replace")))
+        except Exception:
+            print(repr(seed_bytes))
+
+    # Optionally print each part for debugging
+    # for i, p in enumerate(parts):
+    #     print(f"[{i}] repr: {repr(p)}")
+
+    # Connect to CTF host
+    try:
+        with socket.create_connection((args.host, args.port), timeout=8) as s:
+            line = recv_line(s, timeout=6.0)
+    except Exception as e:
+        print("[!] Nu am putut conecta la CTF server:", e)
+        sys.exit(1)
+
+    if not line:
+        print("[!] Nu am primit răspuns de la server.")
+        sys.exit(1)
+
+    encrypted_b64 = extract_encrypted(line)
+    if not encrypted_b64:
+        print("[!] Nu am putut extrage 'encrypted' din:", line)
+        sys.exit(1)
+
+    print("[*] Am primit encrypted (base64). Decriptez...")
+    try:
+        plaintext = decrypt_blob_b64(encrypted_b64, seed_bytes)
+    except Exception as e:
+        print("[!] Eroare la decriptare:", e)
+        print("    Verifică:")
+        print("    - bot-ul are permisiunile View Channels + Read Message History")
+        print("    - mesajele returnate conțin exact timestamp-urile așa cum le folosește serverul")
+        sys.exit(1)
+
+    print("\n== Decrypted (bytes) ==")
+    print(plaintext)
+    print("\n== Decrypted (utf-8 if possible) ==")
+    try:
+        print(plaintext.decode("utf-8"))
+    except Exception:
+        print("<not valid utf-8>")
+
+if __name__ == "__main__":
+    main()
+
+```
 
 ### ancient_house
 - This challange may seem difficult at first sight, but it actually uncovers a simple solve.
@@ -116,8 +442,8 @@
 ### 3rd_child
 - By playing the audio file, I instantly recognise the familiar song name, but also an audio pattern which surely states CTF.
 - The rest of the flag/ sha256, is being overlapped by the song.
-- Using audacity, I could see 3 tracks. I enabled the "show ......." option, and finally, the last track displayed the flag.
-- (poza flag)  
+- Using audacity, I could see 3 tracks. I enabled the "show spectogram" option, and finally, the last track displayed the flag.
+- ![image (1)](https://github.com/user-attachments/assets/1fb861b0-f110-4463-a7c7-a6ee597071ec)
 
 ### onions1
 - The easiest challange. Easier than "feedback".
@@ -130,5 +456,22 @@
 - My qwant and google search queries were really bad, not finding any posibile solution to this challange.
 - Grok, though, was ready to help me.
 - Using a new library, that I have never heard of, the distance was easily calculated.
-- (script)
-- (flag)
+- ctf{361.287 M km}
+```
+from astropy.utils.iers import conf
+conf.auto_max_age = None
+import astropy.units as u
+from astropy.time import Time
+from astropy.coordinates import get_body_barycentric, EarthLocation
+t = Time('2025-11-07T16:00:00')
+location = EarthLocation(lat=41.3851*u.deg, lon=2.1734*u.deg, height=0*u.m)
+observer_gcrs = location.get_gcrs(t)
+earth_bary = get_body_barycentric('earth', t)
+observer_bary = earth_bary + observer_gcrs.cartesian
+mars_bary = get_body_barycentric('mars', t)
+delta = mars_bary - observer_bary
+distance = delta.norm()
+dist_km = distance.to(u.km).value
+dist_mkm = dist_km / 1e6
+print(f"ctf{{{dist_mkm:.3f} M km}}")
+```
