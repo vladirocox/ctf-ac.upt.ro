@@ -438,8 +438,8 @@ if __name__ == "__main__":
 ### ancient_house
 - This challange may seem difficult at first sight, but it actually uncovers a simple solve.
 - Downloading the picture given and asking chatgpt to repair it according to the text, we get a clean picture, which google lens instantly recognises and gives us the flag at first sight.
-- [image](https://github.com/user-attachments/assets/27e95e63-0610-4656-81b5-7f120ea5bf2b)
-- [image](https://github.com/user-attachments/assets/65a13869-f053-4e2c-a812-06afa1c10fc1)
+- ![image](https://github.com/user-attachments/assets/27e95e63-0610-4656-81b5-7f120ea5bf2b)
+- ![image](https://github.com/user-attachments/assets/65a13869-f053-4e2c-a812-06afa1c10fc1)
 
 - CTF{Dumbrava}
 
