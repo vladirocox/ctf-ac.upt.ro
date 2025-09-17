@@ -57,7 +57,7 @@
 
 - dot-private-key
 
-- random-gallery
+- [random-gallery](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#random-gallery)
 
 - theme-generator
 
@@ -80,6 +80,15 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### random-gallery
+- Seeing the login page, I instantly tried some random logins, like admin admin.
+- No succes, so I tried an SQL injection, still nothing.
+- Checked the Cookie-Editor extension and saw a sessioj and logged_in cookie.
+- Changed the logged_in cookie from false to true, and tried my luck navigating to "/gallery".
+- Navigated to city>haunts>me and saw a qr code which scanned, gave a pastebin link, linking to the flag.
+- https://pastebin.com/9HibccWH > ctf{1cd4daf060aee882653595cca4e719d48a3080cd1b76055812145da8a10b47e1}
+<img width="1147" height="1147" alt="not-a-flag" src="https://github.com/user-attachments/assets/a3c0b7b0-42b4-49a0-88c3-f2c860ddbbf3" />
 
 ### Discord
 - The flag_channel does not actually contain the flag. Analyzing the food recipes will just make you hungry.
