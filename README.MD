@@ -25,7 +25,7 @@
 
 - Baofeng
 
-- 3-rd child
+- [3_rd child](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#3rd_child)
 
 - Anticheat
 
@@ -48,6 +48,8 @@
 - [disco_rave](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#disco_rave)
 
 - [discord](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#discord)
+
+- [Escaping-Barcelona](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#escaping-barcelona)
 
 ### web
 
@@ -452,7 +454,7 @@ if __name__ == "__main__":
 - (ipad photo)
 - ctf{fc5b4974d9c262a40810686f06dc5525b046a810ad3f8cd20d62f4d2f6379dbd}
 
-### Escaping Barcelona
+### Escaping-Barcelona
 - My qwant and google search queries were really bad, not finding any posibile solution to this challange.
 - Grok, though, was ready to help me.
 - Using a new library, that I have never heard of, the distance was easily calculated.
