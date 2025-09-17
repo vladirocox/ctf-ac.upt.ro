@@ -21,7 +21,7 @@
 
 - Unknown-traffic2
 
-- Hidden in the cartige
+- [Hidden in the cartige](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#hidden_in_the_cartige)
 
 - Baofeng
 
@@ -80,6 +80,16 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### hidden_in_the_cartige
+- This challange was pretty easy. I started by running strings on the .nes file and exported it to a txt file.
+```
+strings space_invaders.nes >> txt.txt
+```
+- I instantly thought the long lines of text had to do something with the flag.
+- Copy pasted everything in cyberchef and decoded it from hex.
+- ctf{9f1b438164dbc8a6249ba5c66fc0d6195b5388beed890680bf616021f2582248}
+<img width="1920" height="1080" alt="Screenshot_17-Sep_17-59-11_13453" src="https://github.com/user-attachments/assets/7d0d5067-a257-4d47-8613-878e59aea801" />
 
 ### onions2
 - At first, it may seem like it's just a picture, but in reality, it hides an onion link.
