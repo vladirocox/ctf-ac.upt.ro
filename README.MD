@@ -438,7 +438,9 @@ if __name__ == "__main__":
 ### ancient_house
 - This challange may seem difficult at first sight, but it actually uncovers a simple solve.
 - Downloading the picture given and asking chatgpt to repair it according to the text, we get a clean picture, which google lens instantly recognises and gives us the flag at first sight.
-- (chatgpt convo, google lens)
+- [image](https://github.com/user-attachments/assets/27e95e63-0610-4656-81b5-7f120ea5bf2b)
+- [image](https://github.com/user-attachments/assets/65a13869-f053-4e2c-a812-06afa1c10fc1)
+
 - CTF{Dumbrava}
 
 ### 3rd_child
@@ -451,7 +453,7 @@ if __name__ == "__main__":
 - The easiest challange. Easier than "feedback".
 - The long "hashy" link and the ".onion" extension made me open tor browser in a split second.
 - Opening the website, the flag was shown.
-- (ipad photo)
+- ![image](https://github.com/user-attachments/assets/c397a16b-4335-4cbd-b020-145b4bf73ef8)
 - ctf{fc5b4974d9c262a40810686f06dc5525b046a810ad3f8cd20d62f4d2f6379dbd}
 
 ### Escaping-Barcelona
