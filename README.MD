@@ -23,7 +23,7 @@
 
 - [Hidden in the cartridge](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#hidden_in_the_cartridge)
 
-- Baofeng
+- [Baofeng](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#baofeng)
 
 - [3_rd child](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#3rd_child)
 
@@ -80,6 +80,20 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### baofeng
+
+- The file Call.mp3 is available for download.
+- It is a radio transmission recording.
+- It lacks quality and clarity so I have applied some AI Clarity filter.
+- Listening to the audio, I hear CQ CQ CQ this is yankee oscar two tango sierra sierra....
+- This is the radio alphabet, so, it says YO2TSS
+- I have sent this callsign to chatgpt, who told me the location was Hunedoara.
+- YO = Romania
+- 2 = the region corresponding to YO2
+- TSS = individual suffix for the operator
+- ctf{YO2TSS_Hunedoara}
+<img width="1920" height="1080" alt="Screenshot_17-Sep_17-59-11_13453" src="https://cdn.discordapp.com/attachments/1416169229652328599/1417967371577983066/IMG_0146.png?ex=68cd1145&is=68cbbfc5&hm=e34513de47fabfe16d4e4c29d051acec6f402c29eb4bf68d4a9d470726f4dad1&">
 
 ### hidden_in_the_cartridge
 - This challange was pretty easy. I started by running strings on the .nes file and exported it to a txt file.
