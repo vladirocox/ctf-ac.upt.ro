@@ -13,7 +13,7 @@
 
 - XORBITANT
 
-- Baby_crib
+- [Baby_crib](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#baby_crib)
 
 ### Forensics
 
@@ -33,11 +33,12 @@
 
 - [Pythonese](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#pythonese)
 
-- Ironveil
+- [Ironveil](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ironveil)
+
 
 ### Misc
 
-- rugina
+- [rugina](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#rugina)
 
 - [octojail](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#octojail)
 
@@ -82,6 +83,206 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### baby_crib
+
+- Two files were given: lol.hex and flag.hex, and a format hint: ctf{sha256}.
+
+- First poke at the service
+
+- I tried talking to the remote service just to see what it wanted.
+
+```
+┌──(kali㉿kali)-[~/Desktop]
+└─$ nc ctf.ac.upt.ro 9753
+ls 
+ERR expected plaintext:key
+c
+ERR expected plaintext:key
+^C
+```
+
+- So it isn’t a shell. It clearly wants input like plaintext:key, but I figured I could probably solve it offline using the two hex files.
+
+- Peeking at the files
+
+```
+┌──(kali㉿kali)-[~/Desktop]
+└─$ head -c 80 lol.hex; echo
+└─$ head -c 80 flag.hex; echo
+```
+
+- Both are clean hex strings. The filename lol.hex looked like a giant hint: maybe it’s the word “LOL” repeated. My first guess was XOR, so I tried a quick xor approach (dead end—garbage output). Re-reading the text, I realized it might be simple byte addition with a reused keystream: C = (P + K) mod 256.
+
+- Plan
+
+- If lol.hex is the encryption of “LOLLOL…” with the same K, then:
+- K = (C − P) mod 256.
+- Recover K from lol.hex, then decrypt flag.hex with (C − K) mod 256.
+
+- Quick script
+
+- I wrote a tiny Python snippet. My first mistake was using lowercase “lol”; decoding blew up. Switching to uppercase “LOL” fixed it.
+
+```
+┌──(kali㉿kali)-[~/Desktop]
+└─$ python3 - <<'PY'
+lol = bytes.fromhex(open("lol.hex").read().strip())
+flag = bytes.fromhex(open("flag.hex").read().strip())
+
+# crib = 'LOL' repeated to the length of lol
+crib = (b"LOL" * (len(lol)//3)) + b"LOL"[:len(lol)%3]
+
+# keystream from lol: K = C - P (mod 256)
+K = bytes((c - p) % 256 for c, p in zip(lol, crib))
+
+# decrypt flag: P = C - K (mod 256)
+pt = bytes((c - k) % 256 for c, k in zip(flag, K))
+print(pt.decode())
+PY
+```
+
+- CTF{d2e233c8aaa37f0cea948ae5e8d599c0c88d3be4acc3d89b7ad5c1bae8f612fb}
+
+That was it. The service’s “expected plaintext:key” message nudged me toward chosen-plaintext thinking, the lol.hex filename gave me the crib, and after a short XOR detour and the lowercase ‘lol’ typo, the byte-addition approach unlocked the flag.
+
+### rugina
+
+- Rugină (Romanian Rust)
+
+- I opened the challenge and the code box hinted at a Romanian-flavored Rust (“Rugină”). I’d seen a similar gimmick before, so I checked the public repo (aionescu/rugina) to get a feel for it. My first idea was to just wrap normal Rust inside the macro and print the flag.
+
+-Attempt 1 — use the crate macro
+
+```
+I tried the canonical form:
+    rugina::rugină! {
+        funcție principal() {
+            println!("{}", include_str!("/flag"));
+        }
+    }
+```
+
+- The runner answered with:
+
+```
+    error[E0433]: use of undeclared crate or module `rugina`
+```
+
+- So the platform wasn’t injecting the `rugina` crate at all. That also explained why my `funcție` tokens weren’t recognized later on.
+
+- Attempt 2 — meet the required entrypoint
+
+- Next error said the program must define `principal`. Also, I noticed a funny parse hint in another try: the system seemed to rewrite `principal()` to `fn main()`, but it choked on `funcție`. So I stripped it down to only the entrypoint token they validate and let the backend generate `fn main()`:
+
+```
+    principal() {
+        panic!("{}", include_str!("/flag"));
+    }
+```
+
+- This time I hit a path issue:
+    couldn't read `/flag`: No such file or directory
+
+- Good—compile-time include works, I just needed the right path.
+
+- Attempt 3 — force a compile-time leak (no stdout required)
+
+- To avoid any runtime filters, I switched to the one-liner compiler error trick, but the runner refused to start without `principal`. So I combined both:
+
+```
+    principal() { }
+    compile_error!(include_str!("/flag.txt"));
+```
+
+- That exploded exactly how I wanted—with the flag printed in the compiler error:
+
+- error: ctf{73523e676b04e1c2db176d8035648893648b969f5ddf5ac40f8fc5b6c15d8692}
+
+Wrap-up
+-------
+The core idea was simple: satisfy the judge’s “must have principal” check, then use compile-time inclusion to surface the flag without relying on stdout or filesystem permissions. The only real detours were assuming the `rugina` crate existed, and guessing a couple of wrong paths before landing on `/flag.txt`.
+
+### ironveil
+
+- I opened the folder and saw two things: an x86-64 binary called ironveil and a flag.txt.encrypted. No README, no hints. Cool. First thought: “Can I even run this?”
+
+I tried the obvious:
+```
+./ironveil
+# it complained about the loader (Nix-ish build), so I reached for the system loader trick
+
+/lib64/ld-linux-x86-64.so.2 ./ironveil
+# Usage: /path/ironveil <file_to_encrypt>
+```
+
+- Okay, so it only “encrypts” something you give it. No decrypt flag in sight. I wanted to see what it actually writes, so I threw a tiny file at it and looked around.
+
+```
+python - <<'PY'
+open('hello.txt','wb').write(b'hello world')
+PY
+
+# run the encryptor through the system loader
+/lib64/ld-linux-x86-64.so.2 ./ironveil hello.txt
+
+xxd -g1 -c16 hello.txt.encrypted | head
+```
+
+- I noticed a fixed‑size header (16 bytes) and then the ciphertext. That smells like: “we prepend a program/seed and XOR the rest with a keystream.” The binary even mentioned a mini VM when I ran it without args earlier, which reinforced the idea.
+
+- I chased a quick shortcut: if it’s XOR, maybe the flag starts with `ctf{` and I can crib-drag the first 4 bytes. It didn’t line up—the keystream wasn’t something simple or repeating. Fair enough.
+
+- Next, I tried the classic zero-file trick to see the raw stream beyond the header:
+
+```
+python - <<'PY'
+open('zeros','wb').write(b'\\x00'*200)
+PY
+/lib64/ld-linux-x86-64.so.2 ./ironveil zeros
+xxd -g1 -c16 zeros.encrypted | sed -n '2,10p'
+```
+
+- Yep—post‑header, the bytes were effectively the keystream. So the stream depends on the header, not the plaintext. That’s useful, but I didn’t want to fully reverse the VM if I could avoid it.
+
+- What happens if I encrypt the already‑encrypted file? If the tool always slaps a fresh header on and XORs with a new stream, maybe the new stream cancels the old one for the first chunk and leaks something interesting up front.
+
+- So I did the slightly naughty thing:
+
+```
+/lib64/ld-linux-x86-64.so.2 ./ironveil flag.txt.encrypted
+```
+
+- now I have:
+
+```
+flag.txt.encrypted.encrypted
+```
+
+- I looked straight at the beginning of that new file:
+
+```
+head -c 100 flag.txt.encrypted.encrypted
+# or
+strings -n 5 flag.txt.encrypted.encrypted | head
+```
+
+- And there it was, right at the top—the flag in clear. No VM reversing, no dynamic analysis, just a cheeky double‑encrypt. For completeness I also hexdumped to see the header swap:
+
+```
+xxd -g1 -c16 flag.txt.encrypted.encrypted | head
+```
+
+- That was the whole journey: a loader hiccup, a small XOR guess that didn’t pan out, a quick keystream probe with zeros, and then the “what if I run it twice” idea that dumped the flag at the front. Short, sweet, and just a little mischievous.
+
+- For posterity, here are the exact one‑liners I ended up pasting to demo it cleanly:
+
+```
+/lib64/ld-linux-x86-64.so.2 ./ironveil flag.txt.encrypted && head -c 100 flag.txt.encrypted.encrypted
+/lib64/ld-linux-x86-64.so.2 ./ironveil flag.txt.encrypted && strings -n 5 flag.txt.encrypted.encrypted | head
+```
+
+- ctf{72639ac8d2397ab23d51fc82ca0ce8fb57582a92348cadb1a2430d7f3d43bd1b})
 
 ### minecrafty
 
