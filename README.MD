@@ -63,7 +63,7 @@
 
 ### Pwn
 
-- Sigdance
+- [Sigdance](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#sigdance)
 
 - Baby-BOF
 
@@ -73,13 +73,145 @@
 
 ### Osint
 
-- Holiday Trip
+- [Holiday Trip](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#holiday_trip)
 
 - Prison
 
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### sigdance
+
+- I opened the challenge and did the obvious first step: poke it with netcat.
+
+```
+┌──(kali㉿kali)-[~/Desktop]
+└─$ nc ctf.ac.upt.ro 9347
+Hello from pid8 = 11
+ls
+nope
+id
+nope
+```
+
+- The binary wasn’t a shell at all—it just printed “Hello from pid8 = <number>” and then waited for input. That “pid8” hint smelled like (getpid() & 255), so I pulled the provided source and took a quick look. The check boiled down to something like:
+
+```
+(A<<16) ^ (U<<8) ^ (PID & 255)
+```
+
+- where A was a SIGALRM counter and U a SIGUSR1 counter. So the plan: compute the token and send it. For pid8 = 11 I tried the straight guess:
+
+```
+└─$ nc ctf.ac.upt.ro 9347
+Hello from pid8 = 11
+0x6f0d0b
+```
+
+- …“nope.” New connection, new run:
+
+```
+└─$ nc ctf.ac.upt.ro 9347
+Hello from pid8 = 14
+0x6f0d0e
+nope
+```
+
+- Same with 17:
+
+```
+└─$ nc ctf.ac.upt.ro 9347
+Hello from pid8 = 17
+0x6f0d11
+nope
+```
+
+- At this point I realized the important part: each connection spawns a fresh process, so pid8 keeps changing. I needed to read the banner and then try guesses on the same socket. I also suspected the signal counts could drift, so I prepared a tiny window around the “expected” A≈111, U≈13 and sent them one by one:
+
+```
+0x6f0dXX  # exact
+0x6e0dXX  # A-1
+0x700dXX  # A+1
+0x6f0cXX  # U-1
+0x6f0eXX  # U+1
+…
+```
+
+- It still said “nope” for a few PIDs (20, 23). So I widened the window with a simple brute, but crucially kept it on ONE connection:
+
+```
+┌──(kali㉿kali)-[~/Desktop]
+└─$ PID8=20
+( sleep 0.3
+  for A in {100..130}; do
+    for U in {8..20}; do
+      printf "0x%06x\n" $(( (A<<16) ^ (U<<8) ^ PID8  ))
+    done
+  done
+) | nc ctf.ac.upt.ro 9347
+```
+
+- That turned out to reconnect (whoops), which changed pid8 mid-stream. Lesson: keep a persistent socket. I wrote a quick Python helper locally, but Windows got fussy:
+
+```
+[Running] python -u "c:\Users\User\Downloads\coperta\coperta.py"
+[+] pid8 = 29
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+```
+
+- So I went back to Kali where netcat behaved. New session:
+
+```
+└─$ nc ctf.ac.upt.ro 9347
+Hello from pid8 = 38
+```
+
+- I tried the usual window again:
+
+```
+0x6f0d26
+0x6e0d26
+0x700d26
+0x6f0c26
+0x6f0e26
+0x6e0c26
+0x6e0e26
+0x700c26
+0x700e26
+nope
+nope
+nope
+nope
+nope
+nope
+nope
+nope
+nope
+```
+
+-At this point I suspected the timers were barely firing (container jitter). I tested tiny counters on the SAME connection, keeping the banner’s pid8=0x26 in mind:
+
+```
+0x26        # A=0, U=0
+0x0d26      # A=0, U=13
+0x6f0026    # A=111, U=0
+0x6f0d26    # A=111, U=13
+0x000126    # A=0, U=1
+0x010026    # A=1, U=0
+```
+
+- And there it was—the service answered with the flag right after those tiny guesses:
+
+- CTF{cbc4e1be639219dad8912bb764b566200023e15152635eef87be047c41bd995a}
+
+- In the end, the trick wasn’t fancy math; it was simply staying on one connection so pid8 didn’t change, and being flexible about A and U. On this box they were tiny (one or zero ticks), so the low-token guesses hit immediately.
+
+### holiday_trip
+- We get a picture with some mugs.
+- The first mugs spell Golden Sands.
+<img width="1147" height="1147" alt="goldensands" src="https://cdn.discordapp.com/attachments/1416169229652328599/1418261653870350386/Screenshot_18-Sep_15-45-03_11405.png?ex=68cd7a98&is=68cc2918&hm=7f8eff690df377c2e3a990bab4b5c930f438282c366cc9e60d31e43ba4bc0cd3&" />
+- CTF{Golden_Sands}
 
 ### fini
 - FINI — tiny pwn (format-leak + 8‑byte write)
