@@ -179,7 +179,7 @@ print("steal.plugin ready")
 
 - I uploaded steal.plugin. The widget card popped up with a /widget/<uid> URL. Appending /pwnd.txt gave me exactly what I wanted:
 
-- /widget/<uid>/pwnd.txt
+- /widget/uid/pwnd.txt
 
 
 ### unknown_traffic1
