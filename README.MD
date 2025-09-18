@@ -86,15 +86,11 @@
 - The file Call.mp3 is available for download.
 - It is a radio transmission recording.
 - It lacks quality and clarity so I have applied some AI Clarity filter.
-- Listening to the audio, I hear CQ CQ CQ this is yankee oscar two tango sierra sierra....
-- This is the radio alphabet, so, it says YO2TSS
-- I have sent this callsign to chatgpt, who told me the location was Hunedoara.
-- YO = Romania
-- 2 = the region corresponding to YO2
-- TSS = individual suffix for the operator
+- Listening to the audio, I hear CQ CQ CQ this is yankee oscar two tango sierra sierra calling from kilo november 15 kilo sierra. 
+- This is the radio alphabet, so, it says YO2TSS, calling from KS15KS
+- Searching the location, I see the answer Hunedoara. 
 - ctf{YO2TSS_Hunedoara}
-<img width="1920" height="1080" alt="Screenshot_17-Sep_17-59-11_13453" src="https://cdn.discordapp.com/attachments/1416169229652328599/1417967371577983066/IMG_0146.png?ex=68cd1145&is=68cbbfc5&hm=e34513de47fabfe16d4e4c29d051acec6f402c29eb4bf68d4a9d470726f4dad1&">
-
+    <img width="1920" height="1080" alt="Screenshot_17-Sep_17-59-11_13453" src="https://cdn.discordapp.com/attachments/1416169229652328599/1418207157215559780/IMG_8984.png?ex=68cd47d7&is=68cbf657&hm=e7ad98fcd5c02c3a9a2330cd1d7e5a52f096c55df9c415e9e91fe5200fe83af7&">
 ### hidden_in_the_cartridge
 - This challange was pretty easy. I started by running strings on the .nes file and exported it to a txt file.
 ```
