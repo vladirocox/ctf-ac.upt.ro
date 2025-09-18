@@ -31,11 +31,13 @@
 
 ### Reverse engineering
 
-- Pythonese
+- [Pythonese](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#pythonese)
 
 - Ironveil
 
 ### Misc
+
+- rugina
 
 - [octojail](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#octojail)
 
@@ -69,7 +71,7 @@
 
 - [Fini](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#fini)
 
-- Minecrafty
+- [Minecrafty](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#minecrafty)
 
 ### Osint
 
@@ -80,6 +82,182 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### minecrafty
+
+- I joined the server, typed `!flag`, and it roasted me:
+- “Wrong place. Be at (69420, 69420, 69420).”
+- That Y value isn’t even legal in vanilla...
+
+- Commands I actually ran
+
+```
+npm init -y
+npm i minecraft-protocol
+node walk-fast-69420.js
+```
+
+- Working code (paste into walk-fast-69420.js)
+
+```
+js
+const mc = require('minecraft-protocol');
+
+const HOST='ctf.ac.upt.ro', PORT=9291, VERSION='1.19.4';
+const TARGET = { x:69420, y:69420, z:69420 };
+let MAX_STEP = 95; // keep under 100-block per-packet distance
+
+const client = mc.createClient({
+  host: HOST, port: PORT, version: VERSION,
+  username: 'tourist' + Math.floor(Math.random()*1e6),
+  auth: 'offline', keepAlive: true
+});
+
+let cur=null, started=false, steps=0, totalEst=null;
+function len(dx,dy,dz){ return Math.sqrt(dx*dx+dy*dy+dz*dz); }
+
+function stepLoop(){
+  if(!cur) return;
+  const dx = TARGET.x-cur.x, dy = TARGET.y-cur.y, dz = TARGET.z-cur.z;
+  const dist = len(dx,dy,dz);
+  if(!totalEst) totalEst = Math.ceil(dist / MAX_STEP);
+  if(dist < 0.01){
+    client.chat('!flag');
+    return;
+  }
+  const s = Math.min(1, MAX_STEP / dist);
+  cur.x += dx*s; cur.y += dy*s; cur.z += dz*s;
+  steps++;
+  if(steps % 100 === 0){
+    const remain = len(TARGET.x-cur.x,TARGET.y-cur.y,TARGET.z-cur.z);
+    process.stdout.write(`\rStepping… ${steps}/${totalEst ?? '?'}   `);
+  }
+  client.write('position',      { x:cur.x, y:cur.y, z:cur.z, onGround:true });
+  client.write('position_look', { x:cur.x, y:cur.y, z:cur.z, yaw:0, pitch:0, onGround:true });
+  setImmediate(stepLoop);
+}
+
+client.on('packet', (data, meta) => {
+  if(meta.state==='play' && meta.name==='position' && !started){
+    cur = { x:Number(data.x||data.X||0), y:Number(data.y||data.FeetY||0), z:Number(data.z||data.Z||0) };
+    if(typeof data.teleportId==='number') client.write('teleport_confirm', { teleportId:data.teleportId });
+    started = true;
+    setImmediate(stepLoop);
+  }
+});
+
+client.on('player_position_and_look', (p)=>{
+  cur = { x:p.x, y:p.y, z:p.z };
+  if(typeof p.teleportId==='number') client.write('teleport_confirm', { teleportId:p.teleportId });
+  MAX_STEP = Math.max(50, Math.floor(MAX_STEP * 0.8)); // adapt down if rubber-banded
+  console.log(`\nRubber-banded. New MAX_STEP=${MAX_STEP}`);
+  setImmediate(stepLoop);
+});
+
+client.on('system_chat', p => console.log('SYS:', p.content || p.message || JSON.stringify(p)));
+client.on('player_chat', p => console.log('CHAT:', p.plainMessage || JSON.stringify(p)));
+client.on('error', console.error);
+client.on('end', r => console.log('END:', r));
+```
+
+- How it played out
+
+- The bot waits for the server’s initial position packet, sends the teleport confirmation, and then speed‑walks toward 69420.
+- If the server gets me, the script just shrinks the step size and keeps going. Once it lands exactly at (69420, 69420, 69420), it sends `!flag`.
+- That’s when the real flag showed up in my terminal. ✨
+
+### pythonese
+
+- Step 1 — poke the file
+
+```
+file bytecode.pyc
+strings bytecode.pyc | head
+python - <<'PY'
+import marshal, dis, sys
+data = open('bytecode.pyc','rb').read()
+# skip the 16-byte header for Python 3.11
+co = marshal.loads(data[16:])
+print(co)
+dis.dis(co)             # top level
+PY
+```
+
+- The disassembly showed a bunch of tiny helpers (f0…f16) and a coroutine that finally prints something via run(...). The online decompile I tried first (pylingual) looked entertaining but wrong — lots of impossible ops. I ditched it and stuck with real bytecode.
+
+- Step 2 — load it like a module
+
+- I wanted the actual functions, not just disassembly. Executing the code object into a fresh namespace did the trick.
+
+```
+python - <<'PY'
+import marshal
+data = open('bytecode.pyc','rb').read()
+co = marshal.loads(data[16:])
+ns = {}
+exec(co, ns)
+print(sorted(k for k in ns if k.startswith('f')))
+PY
+```
+
+-Now I had callable f0…f16. Reading f16 in dis suggested:
+
+- derive k = sha256(input).digest()
+- derive g using random.Random(seed=int.from_bytes(k[:8],'big'))
+- pull hidden blobs from __doc__/__annotations__
+- decrypt a “blob” and eventually call boot['main'](...) which returns run
+- then print run(bytes(...))
+
+- There’s also a hash check f12(i). If it passes, a “good” path is taken; if not, a decoy path prints junk.
+
+- Step 3 — quick reconnaissance
+
+- I looked for any embedded SHA256 in the file, in case the author hardcoded sha256(flag).
+
+```
+strings bytecode.pyc | grep -Eo '[0-9a-f]{64}' | sort -u
+```
+
+- Nothing obvious popped out, so back to the code path.
+
+- Step 4 — follow the print path
+
+- The function f15 builds the second stage and chooses between “good” and “bad” depending on f12. But the final print is simply run(mip). If I can make run return its input, the program will happily print the decrypted bytes — i.e., the flag. The loader creates run from a marshalled code blob, but I can also call the function generator myself.
+
+- I tried the lazy route first (dead end): call ns['f15']('') and hope it returns the good runner. It didn’t.
+
+- So I went after the other pivot: f13(k1,k2). Dis showed it assembling a bunch of short strings into something readable. It also referenced globals like try_harder? and FLAG!, which felt very “this builds the final message”. That made f13 a promising target.
+
+- Small stumble: I misread two locals and thought it used globals k1/k2 from input length. It actually takes k1,k2 as parameters. Easy fix.
+
+- Step 5 — brute-force the tiny keyspace
+
+- k1 is treated like a 4-digit number and k2 like 2-digit (based on how f15 slices input), so I brute-forced (0000..9999, 00..99) and looked for a CTF{…} substring.
+
+```
+python - <<'PY'
+import marshal, re
+data = open('bytecode.pyc','rb').read()
+co = marshal.loads(data[16:])
+ns = {}
+exec(co, ns)
+f13 = ns['f13']
+flag = None
+for k1 in range(10000):
+    for k2 in range(100):
+        try:
+            out = f13(k1, k2)
+        except Exception:
+            continue
+        if isinstance(out, str) and 'CTF{' in out:
+            flag = out
+            print('k1,k2 =', k1, k2)
+            print(out)
+            raise SystemExit
+PY
+```
+
+- CTF{2944cec0c0f401a5fa538933a2f6210c279fbfc8548ca8ab912b493d03d2f5bf}
 
 ### sigdance
 
