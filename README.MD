@@ -181,6 +181,7 @@ print("steal.plugin ready")
 
 - /widget/uid/pwnd.txt
 
+- CTF{9fb64c8a4d81f9d0e1f4108467bee58db112d0d1457fa3716cc6a46231803686}
 
 ### unknown_traffic1
 
