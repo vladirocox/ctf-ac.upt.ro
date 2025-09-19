@@ -85,6 +85,198 @@
 
 ### neverending-randomness
 
+- I opened the service first using nc.
+
+```
+nc ctf.ac.upt.ro 9801
+```
+
+- It returned a single Python-looking dict with three fields: ciphertext_hex, leak32, and pid. The code snippet in the challenge showed that the server builds a keystream with Python’s random.Random, XORs it with the flag, then leaks three getrandbits(32) values from the same RNG. That screamed “predictable PRNG.”
+
+- My first idea was the classic: if seeding falls back to time, just brute-force around “now ^ pid.” I wrote a quick solver that did exactly this:
+
+```
+python -u solver.py
+```
+
+- …only to get: “Failed to recover flag.” I widened the window to 10 minutes, then 2 hours. Still nothing. At this point I suspected the strong path: the server tries to read 4096 bytes from /opt/app/random; if it gets >= 2048 bytes, it seeds with that big integer and we can’t brute-force it. So I added a loop to keep reconnecting, hoping to catch a weak seed.
+
+- That also failed for a bit. I took a step back and reread the server flow. Facepalm moment: I was comparing the leaked 32-bit numbers from a fresh RNG without burning the keystream bytes first. The server does:
+
+- 1) generate keystream bytes (getrandbits(8) per byte) for the whole ciphertext
+- 2) then call getrandbits(32) three times and leak those
+
+- So of course my checks never matched: I was misaligned.
+
+- I fixed the solver to consume len(ciphertext) bytes before comparing the three 32-bit leaks. I kept the reconnect loop and the growing time window for seed = int(time.time()) ^ pid. The script looked like this on my end:
+
+```
+python -u solver_fixed.py
+```
+
+- And I kept peeking at the service response directly every now and then, just to stay grounded:
+
+```
+nc ctf.ac.upt.ro 9801
+```
+
+- Once the instance finally hit the weak seeding path, the solver immediately printed the flag:
+
+```
+[+] Flag (utf-8): CTF{1bac99dddbcb8c532891bb5f1f3bc0feeac9037f18e575ef9d4f0805dc4d6893}
+```
+
+- Short version of the journey: I tried the time^pid brute force, got nothing, realized the box was usually strongly seeded, made a collector/looper, still got nothing, noticed I’d skipped consuming the keystream bytes, fixed alignment, and then waited for a weak seed to show up. When it did, the three leaked 32-bit values lined up, the keystream reproduced cleanly, and the flag popped right out.
+
+- Initial (buggy) solver (kept for context)
+
+- This was my first attempt. It brute-forced seed = int(time.time()) ^ pid, but it compared the leaked 32-bit values immediately—without consuming the keystream bytes used to encrypt the ciphertext. That’s why it never matched.
+
+```python
+# solver.py (buggy/misaligned version)
+import socket, ast, time, random, binascii
+
+HOST = "ctf.ac.upt.ro"
+PORT = 9801
+
+def xor_bytes(a, b):
+    return bytes(x ^ y for x, y in zip(a, b))
+
+def get_challenge():
+    s = socket.socket()
+    s.connect((HOST, PORT))
+    data = b""
+    while not data.endswith(b"\n"):
+        chunk = s.recv(4096)
+        if not chunk:
+            break
+        data += chunk
+    s.close()
+    return ast.literal_eval(data.decode())
+
+def try_seed(seed, leak):
+    rng = random.Random(seed)
+    test = [rng.getrandbits(32) for _ in range(3)]
+    return test == leak, rng
+
+def recover_flag(ct_hex, leak, pid):
+    ct = binascii.unhexlify(ct_hex)
+    now = int(time.time())
+    for t in range(now - 600, now + 1):
+        seed = t ^ pid
+        ok, rng = try_seed(seed, leak)
+        if ok:
+            ks = bytearray()
+            while len(ks) < len(ct):
+                ks.append(rng.getrandbits(8))
+            return xor_bytes(ct, ks[:len(ct)])
+    return None
+
+def main():
+    data = get_challenge()
+    print("[+] Challenge data:", data)
+    flag = recover_flag(data["ciphertext_hex"], data["leak32"], data["pid"])
+    if flag:
+        print("[+] Flag:", flag.decode(errors="ignore"))
+    else:
+        print("[-] Failed to recover flag.")
+
+if __name__ == "__main__":
+    main()
+```
+
+- Final working solver (alignment + loop)
+
+- This is the fixed version. It consumes len(ciphertext) bytes before comparing the leaks, and it loops until it hits a weakly seeded run. When the three leaked values align under seed = t ^ pid, it regenerates the keystream and decrypts.
+
+```python
+# solver_fixed.py (final working version)
+import socket, ast, time, random, binascii, sys
+
+HOST = "ctf.ac.upt.ro"
+PORT = 9801
+
+def xor_bytes(a, b):
+    return bytes(x ^ y for x, y in zip(a, b))
+
+def recv_dict():
+    s = socket.socket()
+    s.settimeout(5)
+    s.connect((HOST, PORT))
+    data = b""
+    try:
+        while not data.endswith(b"\n"):
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+    finally:
+        s.close()
+    return ast.literal_eval(data.decode())
+
+def consume_keystream_bytes(rng, nbytes):
+    for _ in range(nbytes):
+        rng.getrandbits(8)
+
+def try_seed_against_leak(seed, leak, ct_len):
+    rng = random.Random(seed)
+    consume_keystream_bytes(rng, ct_len)
+    test = [rng.getrandbits(32) for _ in range(3)]
+    return test == leak
+
+def decrypt_with_seed(ct_hex, seed):
+    rng = random.Random(seed)
+    ct = binascii.unhexlify(ct_hex)
+    ks = bytearray()
+    while len(ks) < len(ct):
+        ks.append(rng.getrandbits(8))
+    return xor_bytes(ct, ks)
+
+def find_seed_timexorpid(leak, pid, ct_len, now_ts, back_seconds):
+    forward_skew = 3
+    start = now_ts - back_seconds
+    end   = now_ts + forward_skew
+    for t in range(end, start - 1, -1):
+        seed = t ^ pid
+        if try_seed_against_leak(seed, leak, ct_len):
+            return seed, t
+    return None, None
+
+def main():
+    back_windows = [10, 60, 300, 1800, 3600, 4*3600, 12*3600, 24*3600]
+    attempts = 0
+
+    while True:
+        attempts += 1
+        try:
+            data = recv_dict()
+        except Exception as e:
+            print(f"[!] Network error: {e}. Retrying...", file=sys.stderr)
+            continue
+
+        ct_hex = data["ciphertext_hex"]
+        leak = data["leak32"]
+        pid = data["pid"]
+        ct_len = len(ct_hex) // 2
+        now_ts = int(time.time())
+
+        print(f"[{attempts}] pid={pid} leak={leak} ct_len={ct_len}")
+
+        for win in back_windows:
+            seed, t = find_seed_timexorpid(leak, pid, ct_len, now_ts, win)
+            if seed is not None:
+                print(f"[+] Weak seed found: seed={seed} (t={t}, pid={pid}, window={win}s)")
+                pt = decrypt_with_seed(ct_hex, seed)
+                try:
+                    print("[+] Flag (utf-8):", pt.decode())
+                except UnicodeDecodeError:
+                    print("[+] Flag (bytes):", pt)
+                return
+        print("[-] Looks like strong seed this round (/opt/app/random). Trying again...\n")
+
+if __name__ == "__main__":
+    main()
+```
 
 ### baby-bof
 
