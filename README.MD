@@ -11,7 +11,7 @@
 
 - Neverending Randomness
 
-- XORBITANT
+- [XORBITANT](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#xorbitant)
 
 - [Baby_crib](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#baby_crib)
 
@@ -34,7 +34,6 @@
 - [Pythonese](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#pythonese)
 
 - [Ironveil](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ironveil)
-
 
 ### Misc
 
@@ -83,6 +82,129 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### xorbitant
+
+- I opened the challenge and the name “xorbitant” immediately screamed XOR. The provided files were enc.py and out.bin, plus a hint that the flag format was CTF{sha256}. That “sha256” part made me think the key might literally be the flag, 69 bytes long: 4 for “CTF{”, 64 hex chars, and the closing “}”.
+
+- Step 1 — read the encryptor
+- I checked enc.py first. It was short and very on‑the‑nose: it takes FLAG from the environment and XORs it (repeating) over the plaintext.
+
+```
+    import os
+
+    def xor(input_path: str, output_path: str):
+        key = os.getenv("FLAG","CTF{example_flag}") 
+        ...
+        xored = bytes([b ^ key_bytes[(i + j) % key_len] for j, b in enumerate(chunk)])
+```
+
+- So, the ciphertext is: plaintext ^ FLAG. No salts, no IVs, just repeating‑key XOR.
+
+- Step 2 — look at the ciphertext
+- Before writing code, I like to check files from the shell:
+
+```
+    file out.bin
+    wc -c out.bin
+    xxd -l 64 out.bin
+    strings -n 8 out.bin | head
+```
+
+- It looked like a big blob (~1.8MB), not compressed, with enough printable bits to suggest the original plaintext was normal English text or source code. That’s perfect for statistical attacks on repeating‑key XOR: pick a key byte that makes the decoded bytes mostly printable.
+
+- Step 3 — first (slightly messy) attempt
+
+- My first pass was lazy: for each position i mod 69, try all 256 key bytes and choose the one that maximizes “printable ASCII” in the decoded stream at that stride. That immediately spit out something that *looked* like a flag but had odd characters like ; : g ~ sprinkled in. That told me the idea was right, but I needed to **constrain the search** to what a real flag can look like.
+
+- Step 4 — lock the format and 
+- Given the flag format, the key bytes themselves must be exactly:
+
+```
+- positions 0..3 → 'C', 'T', 'F', '{'
+- positions 4..67 → lowercase hex [0-9a-f] (64 chars = sha256)
+- position 68 → '}'
+```
+
+- I re-ran the search but only allowed those characters at each position.
+
+- Commands I actually used during the solve
+
+```
+
+    python3 - <<'PY'
+from pathlib import Path
+print(len(Path('out.bin').read_bytes()))
+PY
+
+    # quick glance at the first few bytes
+    xxd -l 64 out.bin
+
+    # run my recovery script (below)
+    python3 recover_flag.
+```
+
+- The recovery script
+- I kept it simple and standalone: read out.bin, assume key length = 69, and, for each key position, choose the key character (restricted to the format above) that maximizes the fraction of printable ASCII in the decoded bytes at that stride.
+
+- Save as recover_flag.py:
+
+```
+    #!/usr/bin/env python3
+    import sys
+    from pathlib import Path
+
+    PRINTABLE = set(range(0x20, 0x7f)) | {0x09, 0x0a, 0x0d}
+    HEX = b"0123456789abcdef"
+    FLAG_LEN = 69
+
+    def best_key_byte_for_pos(ct, pos, allowed):
+        stride = range(pos, len(ct), FLAG_LEN)
+        best_k, best_score = None, -1.0
+        for k in allowed:
+            good = 0
+            total = 0
+            for i in stride:
+                p = ct[i] ^ k
+                total += 1
+                if p in PRINTABLE:
+                    good += 1
+            score = good / total if total else 0.0
+            if score > best_score:
+                best_score, best_k = score, k
+        return best_k
+
+    def main():
+        ct = Path("out.bin").read_bytes()
+        allowed = []
+        for pos in range(FLAG_LEN):
+            if pos == 0: allowed.append([ord('C')])
+            elif pos == 1: allowed.append([ord('T')])
+            elif pos == 2: allowed.append([ord('F')])
+            elif pos == 3: allowed.append([ord('{')])
+            elif pos == 68: allowed.append([ord('}')])
+            else: allowed.append(list(HEX))
+
+        key = bytearray(FLAG_LEN)
+        for pos in range(FLAG_LEN):
+            key[pos] = best_key_byte_for_pos(ct, pos, allowed[pos])
+
+        flag = key.decode("ascii")
+        print(flag)
+
+        # (Optional) Decrypt the plaintext to verify it looks sane
+        pt = bytearray(len(ct))
+        for i, b in enumerate(ct):
+            pt[i] = b ^ key[i % FLAG_LEN]
+        print(pt[:200].decode(errors="replace"))
+
+    if __name__ == "__main__":
+        main()
+```
+
+- Result
+
+- CTF{940a412446a831e651a991d88d01ea4d0aa1744a1e9a534e745b9125dfd44aca}
 
 ### prison
 
