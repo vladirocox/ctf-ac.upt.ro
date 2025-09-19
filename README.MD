@@ -9,7 +9,7 @@
 
 - [SSS](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#SSS)
 
-- [Neverending Randomness])(https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#neverending-randomness)
+- [Neverending Randomness](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#neverending-randomness)
 
 - [XORBITANT](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#xorbitant)
 
