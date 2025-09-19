@@ -5,7 +5,7 @@
 
 ### Crypto
 
-- Repeated RSA
+- [Repeated RSA](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#repeated-rsa)
 
 - [SSS](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#SSS)
 
@@ -83,6 +83,9 @@
 
 ## --------------------------------------------------
 
+### neverending-randomness
+
+
 ### baby-bof
 
 - Started with
@@ -146,7 +149,7 @@ Spune ceva:
 ```
 - ctf{3c1315f63d550570a690f693554647b7763c3acbc806ae846ce8d25b5f364d10}
 
-### neverending-randomness
+### repeated-rsa
 
 - Service: nc ctf.ac.upt.ro 9510
 - Given: one ciphertext, three moduli (n1, n2, n3), e = 65537.
