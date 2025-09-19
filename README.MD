@@ -78,11 +78,44 @@
 
 - [Holiday Trip](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#holiday_trip)
 
-- Prison
+- [Prison](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#prison)
 
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### prison
+
+- Figuring out the server
+- I googled the staff names + “prison” and checked NameMC. The rank ladder (Guard → SrGuard → Warden → SrWarden) screamed a classic server: The Pen. I added it to my list and connected:
+
+```
+  play.thepen-mc.net
+```
+
+- Joining
+- I walked to the same hallway from the screenshot—lanterns hanging, staff statues, and the yellow “/discord” text. I stood on the dark slab where the screenshot was obviously taken and pressed F3.
+
+- Numbers on screen for me:
+
+```
+  Block:  -3429 65 571
+  Chunk:  -215 4 35
+```
+
+- I checked the math anyway:
+
+```
+  chunkX = floor(-3429 / 16) = -215
+  chunkY = floor(65 / 16)    = 4
+  chunkZ = floor(571 / 16)   = 35
+```
+
+- (If you stand half a step differently the Z may flip to 34; I aligned with the original angle and kept 35.)
+
+- The challenge wanted chunk coords, not block, in this format: ctf{server_host(x,y,z)}. So I submitted:
+
+- ctf{play.thepen-mc.net(-215,4,35)}
 
 ### anticheat
 
@@ -90,7 +123,7 @@
 
 - 1) The decryptor I found (and used)
 
-I copied the Python3 RC4-based decryptor from the forum and used it to get the first readable layer.
+- I copied the Python3 RC4-based decryptor from the forum and used it to get the first readable layer.
 
 ```python
 #!/usr/bin/env python3
