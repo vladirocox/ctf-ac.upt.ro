@@ -19,7 +19,7 @@
 
 - [Unknown-traffic1](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#unknown-traffic1)
 
-- Unknown-traffic2
+- [Unknown-traffic2](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#unknown-traffic2)
 
 - [Hidden in the cartridge](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#hidden_in_the_cartridge)
 
@@ -27,7 +27,7 @@
 
 - [3_rd child](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#3rd_child)
 
-- Anticheat
+- [Anticheat](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#anticheat)
 
 ### Reverse engineering
 
@@ -83,6 +83,203 @@
 - [Ancient_house](https://github.com/vladirocox/ctf-ac.upt.ro/blob/main/README.MD#ancient_house)
 
 ## --------------------------------------------------
+
+### anticheat
+
+- I grabbed the Vanguard log challenge and started by looking around the archive. There were thousands of small `vgc_*`/`vgs_*` files — clearly not something to open one-by-one. The forum post I found while searching for “Vanguard anticheat log decryptor” pointed me in the right direction (I found a helpful post on UnknownCheats: https://www.unknowncheats.me/forum/valorant/388576-reading-vanguard-log-files.html), and I used that decryptor as my starting point.
+
+- 1) The decryptor I found (and used)
+
+I copied the Python3 RC4-based decryptor from the forum and used it to get the first readable layer.
+
+```python
+#!/usr/bin/env python3
+# vanguard_decrypt.py
+import struct
+import sys
+
+def rc4(data, key):
+    S = [i for i in range(256)]
+    j = 0
+    out = []
+    for i in range(256):
+        j = (j + S[i] + key[i % len(key)]) % 256
+        S[i], S[j] = S[j], S[i]
+    i = j = 0
+    for char in data:
+        i = (i + 1) % 256
+        j = (j + S[i]) % 256
+        S[i], S[j] = S[j], S[i]
+        out.append(char ^ S[(S[i] + S[j]) % 256])
+    return bytearray(out)
+
+KEYMASK = [0xB1, 0x54, 0x45, 0x57, 0xA7, 0xC4, 0x64, 0x2E,
+           0x98, 0xD8, 0xB1, 0x1A, 0x0B, 0xAA, 0xD8, 0x8E,
+           0x7F, 0x1E, 0x5B, 0x8D, 0x08, 0x67, 0x96, 0xCB,
+           0xAA, 0x11, 0x50, 0x84, 0x17, 0x46, 0xA3, 0x30]
+
+if len(sys.argv) <= 1:
+    print('usage: vanguard_decrypt.py vgc_X_Y_Z.log')
+    exit()
+
+DATA = open(sys.argv[1], 'rb').read()
+DATA = DATA[4:]                    # skip file header
+REAL_KEY = [DATA[i] ^ KEYMASK[i] for i in range(32)]
+DATA = DATA[32:]
+while len(DATA) > 0:
+    BLOCK_LEN = struct.unpack('<L', DATA[:4])[0]
+    DATA = DATA[4:]
+    print(rc4(DATA[:BLOCK_LEN], REAL_KEY).decode('utf-16'))
+    DATA = DATA[BLOCK_LEN:]
+```
+
+- Run it like this to process many files in a directory (one-liner):
+
+```bash
+for f in output/*.log output/*.bin; do
+  python3 vanguard_decrypt.py "$f" > "decrypted/$(basename "$f").dec.txt"
+done
+```
+
+- 2) What that script produced
+
+- The decryptor gives UTF-16 text lines. For this challenge each line looked like base64 garbage — so the next obvious step was to base64-decode those lines. Example:
+
+```bash
+# decode a single decrypted file (first line shown)
+head -n 1 decrypted/vgs_593_812_635.bin.dec.txt | tr -d '\r\n' | base64 -d > layer2.bin
+```
+
+- Sometimes `base64 -d` is `base64 --decode` depending on your system. I used:
+
+```bash
+base64 -d <<< "Y3RmezhhMTFkZWM3OTU4ODA4ZjAx..." > layer2.bin
+```
+
+- 3) The dead-ends and little mistakes
+
+- I tried common decompressors (gzip, zlib, brotli) on `layer2.bin` because binary blobs often compress text. Nothing useful:
+
+```bash
+gzip -d layer2.bin       # tried gzip
+python3 -c "import zlib,sys; print(zlib.decompress(sys.stdin.buffer.read()))" < layer2.bin
+# brotli: brotli --decompress layer2.bin
+```
+
+- No readable output.
+
+- I also tried re-applying RC4 with obvious keys (filename as key, parts of the header) and a few short XOR guesses — those gave brace-like structures `{...}` but still binary inside. That told me I was on the trail but didn’t have the right operation yet.
+
+- 4) The thing that worked
+
+- I decided to be systematic: take every first-stage decrypted line, base64-decode it, and try a quick scan for flag-like patterns. I used a small Python script to iterate the decrypted files, base64-decode each line, and test for common flag regexes (or try a tiny single-byte XOR trial). Here’s a compact version of what I ran (save as `find_flag.py`):
+
+```python
+#!/usr/bin/env python3
+# find_flag.py - scan decrypted outputs for flags
+import os, re, base64, glob, sys
+flag_re = re.compile(r'(ctf\{[0-9a-fA-F]+\}|FLAG\{.*?\}|CTF\{.*?\})', re.IGNORECASE)
+
+for fn in glob.glob('decrypted/*.dec.txt'):
+    with open(fn, 'r', encoding='utf-8', errors='replace') as fh:
+        for line in fh:
+            line = line.strip()
+            if not line: continue
+            try:
+                blob = base64.b64decode(line, validate=True)
+            except Exception:
+                continue
+            # direct search
+            m = flag_re.search(blob.decode('utf-8', errors='ignore'))
+            if m:
+                print("FOUND in", fn, "->", m.group(0))
+                sys.exit(0)
+            # simple single-byte XOR scan (quick check)
+            for k in range(256):
+                xb = bytes(c ^ k for c in blob)
+                m = flag_re.search(xb.decode('utf-8', errors='ignore'))
+                if m:
+                    print("FOUND in", fn, "xor key", k, "->", m.group(0))
+                    sys.exit(0)
+print("No flag found in decrypted/*.dec.txt (try deeper brute force if needed)")
+```
+
+- I ran:
+
+```bash
+python3 find_flag.py
+```
+
+- That script scanned the outputs and found the flag in a single file: `output/vgs_593_812_635.bin` (after the decryptor produced a base64 line, decoding that gave the flag).
+
+- 5) The exact successful commands I ran, in order
+
+```bash
+# 1. decrypt the single target file
+python3 vanguard_decrypt.py output/vgs_593_812_635.bin > decrypted/vgs_593_812_635.bin.dec.txt
+
+# 2. show the first line (it looked like base64)
+head -n 1 decrypted/vgs_593_812_635.bin.dec.txt
+
+# 3. base64-decode the line
+head -n 1 decrypted/vgs_593_812_635.bin.dec.txt | tr -d '\r\n' | base64 -d > layer2.bin
+
+# 4. quick check to see if layer2.bin is readable ASCII
+xxd layer2.bin | head -n 3
+strings layer2.bin | head -n 20
+
+# 5. or run the find script across all decrypted files to automate
+python3 find_flag.py
+```
+
+- When the script found the flag, it printed:
+
+- ctf{8a11dec7958808f0145aa8bb958f2332a53b6c210776adb9264738b9a31f65cf}
+
+### unknown-traffic2
+
+- opened Wireshark and the first thing that stood out was the link type (Raw IP) and a wall of ICMP packets. Clicked “Follow TCP Stream”… except, well, there is no TCP. ICMP only. Okay, so the data must be hiding in the echo packets.
+
+- I checked both sides and at first filtered for replies:
+
+‘’’
+  icmp.type == 0
+‘’’
+
+- Nothing interesting there. Switching to requests:
+
+‘’’
+  icmp.type == 8
+‘’’
+
+- Now every packet had a small payload. When I rendered it as ASCII, I kept seeing pieces like “CHUNK_000:… CHUNK_001:…”.
+
+- I wanted it in the terminal so I moved to tshark. First, a check on the file:
+
+‘’’
+  file traffic.pcap
+‘’’
+
+- Then I pulled the raw payloads from all echo requests:
+
+‘’’
+  tshark -r traffic.pcap -Y "icmp.type==8" -T fields -e data \
+    | xxd -r -p \
+    | grep -ao 'CHUNK_[0-9]\{3\}:[A-Za-z0-9+/=]\+' > chunks.txt
+‘’’
+
+- My first try used icmp.data as the field and returned nothing; switching to generic “data” did the trick. With the chunks on disk, I sorted them by index, removed the labels, glued them together, and base64‑decoded:
+
+‘’’
+  sort -t_ -k2,2n chunks.txt \
+    | sed 's/.*://' \
+    | tr -d '\n' \
+    | base64 -d > extracted.png
+‘’’
+
+- I opened the image and the flag was smiling back at me:
+
+- ctf{da8978b239f7e78370c36501ee6a0458e7c4dd870463e44ca6f9b949549ebf1b}
 
 ### baby_crib
 
